@@ -64,8 +64,11 @@ exports.getSignup = (req, res) => {
   if (req.user) {
     return res.redirect('/');
   }
-  res.render('account/signup', {
-    title: 'Create Account'
+  User.find((err, docs) => {
+    res.render('account/signup', {
+      users: docs,
+      title: 'Create Account test'
+    });
   });
 };
 

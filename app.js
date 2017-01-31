@@ -34,6 +34,8 @@ const homeController = require('./controllers/home');
 const userController = require('./controllers/user');
 const apiController = require('./controllers/api');
 const contactController = require('./controllers/contact');
+const bookController  = require('./controllers/book');
+const dashboardController = require('./controllers/dashboard');
 
 /**
  * API keys and Passport configuration.
@@ -44,6 +46,8 @@ const passportConfig = require('./config/passport');
  * Create Express server.
  */
 const app = express();
+const server = require('http').Server(app);
+const io = require('socket.io')(server);
 
 /**
  * Connect to MongoDB.
@@ -55,13 +59,11 @@ mongoose.connection.on('error', () => {
   process.exit();
 });
 
-/**
- * Express configuration.
- */
+
 app.set('port', process.env.PORT || 3000);
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
-app.use(expressStatusMonitor());
+// app.use(expressStatusMonitor());
 app.use(compression());
 app.use(sass({
   src: path.join(__dirname, 'public'),
@@ -90,8 +92,8 @@ app.use((req, res, next) => {
     lusca.csrf()(req, res, next);
   }
 });
-app.use(lusca.xframe('SAMEORIGIN'));
-app.use(lusca.xssProtection(true));
+// app.use(lusca.xframe('SAMEORIGIN'));
+// app.use(lusca.xssProtection(true));
 app.use((req, res, next) => {
   res.locals.user = req.user;
   next();
@@ -132,6 +134,9 @@ app.post('/account/profile', passportConfig.isAuthenticated, userController.post
 app.post('/account/password', passportConfig.isAuthenticated, userController.postUpdatePassword);
 app.post('/account/delete', passportConfig.isAuthenticated, userController.postDeleteAccount);
 app.get('/account/unlink/:provider', passportConfig.isAuthenticated, userController.getOauthUnlink);
+app.get('/books', bookController.getBooks);
+app.post('/books', bookController.postBooks);
+app.get('/dashboard', dashboardController.getDashboard);
 
 /**
  * API examples routes.
@@ -219,12 +224,68 @@ app.get('/auth/pinterest/callback', passport.authorize('pinterest', { failureRed
  */
 app.use(errorHandler());
 
+io.on('connection', function(socket){
+  console.log('a user connected');
+});
+
 /**
  * Start Express server.
  */
-app.listen(app.get('port'), () => {
+server.listen(app.get('port'), () => {
   console.log('%s App is running at http://localhost:%d in %s mode', chalk.green('✓'), app.get('port'), app.get('env')); 
   console.log('  Press CTRL-C to stop\n');
+});
+
+/**
+ * Emit Pageviews on Socket.io
+ */
+//
+// io.configure('production', function(){
+//   io.enable('browser client minification');  // send minified client
+//   io.enable('browser client etag');          // apply etag caching logic based on version number
+//   io.enable('browser client gzip');          // gzip the file
+//   io.set('log level', 1);                    // reduce logging
+//   io.set("polling duration", 10);            // increase polling frequency
+//   io.set('transports', [                     // Manage transports
+//     'websocket'
+//     , 'htmlfile'
+//     , 'xhr-polling'
+//     , 'jsonp-polling'
+//   ]);
+//   io.set('authorization', function (handshakeData, callback) {
+//     if (handshakeData.xdomain) {
+//       callback('Cross-domain connections are not allowed');
+//     } else {
+//       callback(null, true);
+//     }
+//   });
+// });
+//
+// io.configure('development', function(){
+//   io.set('log level', 1);                    // reduce logging
+//   io.set('transports', [
+//     'websocket'                              // Let's just use websockets for development
+//   ]);
+//   io.set('authorization', function (handshakeData, callback) {
+//     if (handshakeData.xdomain) {
+//       callback('Cross-domain connections are not allowed');
+//     } else {
+//       callback(null, true);
+//     }
+//   });
+// });
+//
+io.sockets.on('connection', function (socket) {
+  socket.on('message', function (message) {
+    console.log("Got message: " + message);
+    var ip = socket.handshake.address.address;
+    var url = message;
+    io.sockets.emit('pageview', { 'connections': Object.keys(io.of(namespace ||"/")).length, 'ip': ip, 'url': url, 'xdomain': socket.handshake.xdomain, 'timestamp': new Date()});
+  });
+  socket.on('disconnect', function () {
+    console.log("Socket disconnected");
+    io.sockets.emit('pageview', { 'connections': Object.keys(io.of(namespace ||"/")).length});
+  });
 });
 
 module.exports = app;
